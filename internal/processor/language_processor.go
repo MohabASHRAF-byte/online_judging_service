@@ -26,7 +26,7 @@ func RunCodeWithTestcases(m *containers.ContainersPoolManger, code string, testc
 	defer m.FreeContainer(doc)
 
 	// copy code to the container
-	fileName, err := exec.CopyCodeToFile(doc, lang, code)
+	fileName, err := exec.CopyCodeToFile(doc, code)
 	if err != nil {
 		return nil, err
 	}

@@ -15,26 +15,14 @@ import (
 type CppRunLangInterFace struct {
 }
 
-func (_ CppRunLangInterFace) CopyCodeToFile(containerCpy *models.Container, language models.Language, code string) (string, error) {
-	// Create TAR archive directly from code string (no file I/O)
-	var fileName = ""
-	if language == models.Cpp {
-		fileName = "main.cpp"
-	} else if language == models.Python {
-		fileName = "main.py"
-	}
-	tarData, err := createTarArchiveFromMemory(fileName, code)
+// the target of this function is only to pass the name of the file and call the util file to copy
+func (_ CppRunLangInterFace) CopyCodeToFile(containerCpy *models.Container, code string) (string, error) {
+	_, err := CopyCodeToFileGlobalUtil(containerCpy, "main.cpp", code)
 	if err != nil {
-		return "", fmt.Errorf("failed to create tar archive: %v", err)
+		return "", err
 	}
+	return "main.cpp", nil
 
-	// Copy the TAR archive to the container's /workspace containers
-	err = containerCpy.Cli.CopyToContainer(containerCpy.Ctx, containerCpy.ContainerResp.ID, "/workspace", tarData, container.CopyToContainerOptions{})
-	if err != nil {
-		return "", fmt.Errorf("failed to copy source to container: %v", err)
-
-	}
-	return fileName, nil
 }
 
 func (_ CppRunLangInterFace) CompileCode(containerCpy *models.Container, fileName string) (string, error) {
