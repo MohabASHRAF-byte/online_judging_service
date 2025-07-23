@@ -9,6 +9,19 @@ import (
 )
 
 func RunCodeWithTestcases(m *containers.ContainersPoolManger, code string, testcases []string, codeLanguage string) ([]string, error) {
+	var outputs []string
+	for _, testCase := range testcases {
+		testOutput, err := RuntestCase(m, code, testCase, codeLanguage)
+		if err != nil {
+			return nil, err
+		}
+		if testOutput != nil {
+			outputs = append(outputs, *testOutput)
+		}
+	}
+	return outputs, nil
+}
+func RuntestCase(m *containers.ContainersPoolManger, code string, testcase string, codeLanguage string) (*string, error) {
 
 	var exec models.LangContainer
 	var lang models.Language
@@ -38,14 +51,10 @@ func RunCodeWithTestcases(m *containers.ContainersPoolManger, code string, testc
 	}
 
 	// run all test cases
-	outputs, err := exec.RunTestCases(doc, testcases, compileCommand)
+	output, err := exec.RunTestCases(doc, testcase, compileCommand)
 	if err != nil {
 		return nil, err
 	}
 	fmt.Printf("🎯 Total Execution Time: %v\n", time.Since(overallStart))
-	return outputs, nil
+	return &output, nil
 }
-
-// ============================================
-// HELPER FUNCTION: Create TAR Archive Directly from Memory
-// ============================================

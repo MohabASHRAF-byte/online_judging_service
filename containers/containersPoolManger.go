@@ -12,6 +12,12 @@ import (
 	"judging-service/internal/models"
 )
 
+//type ResourceLimit struct {
+//	MemoryMB int
+//	Timeout  time.Duration
+//	CPU      int // (Optional) CPU cores/quotas
+//}
+
 type ContainersPoolManger struct {
 	Limit          int
 	FreeContainers []*models.Container
