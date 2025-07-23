@@ -8,7 +8,6 @@ import (
 	"io"
 	"judging-service/internal/customErrors"
 	"judging-service/internal/models"
-	"log"
 	"strings"
 	"time"
 )
@@ -16,7 +15,6 @@ import (
 type PythonRunLangInterface struct {
 }
 
-// Copy Python code to main.py file
 func (_ PythonRunLangInterface) CopyCodeToFile(containerCpy *models.Container, code string) (string, error) {
 	_, err := CopyCodeToFileGlobalUtil(containerCpy, "main.py", code)
 	if err != nil {
@@ -25,9 +23,7 @@ func (_ PythonRunLangInterface) CopyCodeToFile(containerCpy *models.Container, c
 	return "main.py", nil
 }
 
-// For Python, we validate syntax instead of compiling
 func (_ PythonRunLangInterface) CompileCode(containerCpy *models.Container, fileName string, ctx context.Context) (string, error) {
-	log.Println("[DEBUG: 1] Entering CompileCode function for Python.")
 
 	var executableFileCommand = "python " + fileName
 	compileExecConfig := container.ExecOptions{
@@ -36,66 +32,37 @@ func (_ PythonRunLangInterface) CompileCode(containerCpy *models.Container, file
 		AttachStderr: true,
 		WorkingDir:   "/workspace",
 	}
-	log.Println("[DEBUG: 2] Compile exec config created for Python syntax check.")
-
-	log.Println("[DEBUG: 3] Attempting to create compile exec in container...")
 	compileExecResp, err := containerCpy.Cli.ContainerExecCreate(ctx, containerCpy.ContainerResp.ID, compileExecConfig)
-
 	if err != nil && errors.Is(err, context.DeadlineExceeded) {
-		log.Printf("[DEBUG: 3.1] Caught timeout error during ContainerExecCreate: %v", err)
 		return "", &customErrors.TimeLimitExceededError{Limit: 1}
 	}
-
 	if err != nil {
-		log.Printf("[DEBUG: 3.2] Caught a non-timeout error during ContainerExecCreate: %v", err)
 		return "", fmt.Errorf("failed to create compile exec: %v", err)
 	}
-	log.Printf("[DEBUG: 4] Successfully created compile exec with ID: %s", compileExecResp.ID)
-
-	log.Println("[DEBUG: 5] Attaching to compile exec streams...")
 	compileAttachResp, err := containerCpy.Cli.ContainerExecAttach(ctx, compileExecResp.ID, container.ExecStartOptions{})
 	if err != nil {
-		log.Printf("[DEBUG: 5.1] Error attaching to compile exec: %v", err)
 		return "", fmt.Errorf("failed to attach to compile exec: %v", err)
 	}
 	defer compileAttachResp.Close()
-	log.Println("[DEBUG: 6] Successfully attached to compile exec.")
-
-	log.Println("[DEBUG: 7] Reading all output from compile exec... (This is where it will likely hang if the context expires)")
-	compileOutputBytes, err := io.ReadAll(compileAttachResp.Reader)
-
+	_, err = io.ReadAll(compileAttachResp.Reader)
 	if errors.Is(err, context.DeadlineExceeded) {
-		log.Printf("[DEBUG: 7.1] Caught context deadline exceeded error after io.ReadAll returned.")
 		return "", err
 	} else if err != nil {
-		log.Printf("[DEBUG: 7.2] Caught a non-timeout error during io.ReadAll: %v", err)
 		return "", fmt.Errorf("failed to read compile output: %v", err)
 	}
-	log.Printf("[DEBUG: 8] Finished reading from exec stream. Read %d bytes.", len(compileOutputBytes))
-
-	log.Println("[DEBUG: 9] Inspecting exec result...")
 	compileInspect, err := containerCpy.Cli.ContainerExecInspect(ctx, compileExecResp.ID)
 	if err != nil {
-		log.Printf("[DEBUG: 9.1] Error inspecting compile exec: %v", err)
 		return "", fmt.Errorf("failed to inspect compile exec: %v", err)
 	}
-	log.Printf("[DEBUG: 10] Exec inspect complete. ExitCode: %d", compileInspect.ExitCode)
-
 	if compileInspect.ExitCode != 0 {
-		log.Printf("[DEBUG: 10.1] Python syntax validation failed with non-zero exit code. Output: %s", string(compileOutputBytes))
 		return "", &customErrors.CompilationError{}
 	}
-	log.Println("[DEBUG: 11] Python syntax validation successful. Returning executable command.")
-
 	return executableFileCommand, nil
 }
 
 func (_ PythonRunLangInterface) RunTestCases(containerCpy *models.Container, testcase string, compileCommand string, ctx context.Context) (string, error) {
-	log.Println("[DEBUG:12] Starting Python test case execution")
 
 	testcaseStart := time.Now()
-
-	// Split the compile command (e.g., "python main.py" -> ["python", "main.py"])
 	cmdParts := strings.Fields(compileCommand)
 
 	runExecConfig := container.ExecOptions{
@@ -105,20 +72,17 @@ func (_ PythonRunLangInterface) RunTestCases(containerCpy *models.Container, tes
 		AttachStderr: false,
 		WorkingDir:   "/workspace",
 	}
-	log.Println("[DEBUG:13] Run exec config created for Python")
 
 	runExecResp, err := containerCpy.Cli.ContainerExecCreate(ctx, containerCpy.ContainerResp.ID, runExecConfig)
 	if err != nil {
 		return "", fmt.Errorf("failed to create run exec for testcase : %v", err)
 	}
-	log.Println("[DEBUG:14] Python exec created successfully")
 
 	runAttachResp, err := containerCpy.Cli.ContainerExecAttach(ctx, runExecResp.ID, container.ExecStartOptions{})
 	if err != nil {
 		return "", fmt.Errorf("failed to attach to run exec for testcase : %v", err)
 	}
 	defer runAttachResp.Close()
-	log.Println("[DEBUG:15] Attached to Python exec")
 
 	go func() {
 		defer runAttachResp.CloseWrite()
@@ -127,11 +91,7 @@ func (_ PythonRunLangInterface) RunTestCases(containerCpy *models.Container, tes
 			fmt.Printf("Warning: failed to write input for testcase: %v\n", err)
 		}
 	}()
-	log.Println("[DEBUG:16] Input written to Python process")
-
 	output, err := io.ReadAll(ctxReader(ctx, runAttachResp.Reader))
-	log.Println("[DEBUG:17] Output read from Python process")
-
 	if err != nil {
 		return "", err
 	}
@@ -139,14 +99,12 @@ func (_ PythonRunLangInterface) RunTestCases(containerCpy *models.Container, tes
 	stdoutStr, stderrStr := demultiplexDockerOutput(output)
 
 	cleanOutput := strings.TrimSpace(stdoutStr)
-	log.Println("[DEBUG:18] Python output processed")
 
 	if stderrStr != "" {
-		fmt.Printf("⚠️  Stderr for testcase: %s\n", stderrStr)
+		fmt.Printf("Stderr for testcase: %s\n", stderrStr)
 	}
-
 	testcaseTime := time.Since(testcaseStart)
-	fmt.Printf("✓ Testcase completed in: %s. Output: '%s'\n", testcaseTime, cleanOutput)
+	fmt.Printf("Testcase completed in: %s. Output: '%s'\n", testcaseTime, cleanOutput)
 
 	return cleanOutput, nil
 }
