@@ -3,6 +3,6 @@ package models
 type Language string
 
 const (
-	Cpp    Language = "gcc:latest"
-	Python Language = "Python"
+	Cpp    Language = "cpp"
+	Python Language = "python"
 )

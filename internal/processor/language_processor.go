@@ -1,49 +1,44 @@
 package processor
 
 import (
-	"archive/tar"
 	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"judging-service/containers"
 	"judging-service/internal/models"
-	"strconv"
+	"judging-service/internal/service"
 	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
 )
 
-func RunCppWithTestcases(m *containers.ContainersPoolManger, code string, testcases []string) ([]string, error) {
+func RunCppWithTestcases(m *containers.ContainersPoolManger, code string, testcases []string, codeLanguage string) ([]string, error) {
 
 	var outputs []string
+	var exec models.LangContainer
+	var lang models.Language
+
+	if string(models.Cpp) == codeLanguage {
+		lang = models.Cpp
+		exec = service.CppRunLangInterFace{}
+	} else {
+		return nil, fmt.Errorf("invalid language")
+	}
 	sectionStart := time.Now()
 	overallStart := time.Now()
 	fmt.Printf("⏱️  Section 2 (Container Create & Start): %v\n", time.Since(sectionStart))
-	doc, err := m.GetContainer(models.Cpp)
+	// init container
+	doc, err := m.GetContainer(lang)
 	defer m.FreeContainer(doc)
-
-	fmt.Printf(strconv.Itoa(doc.ID))
-	// ============================================
-	// SECTION 3: Create TAR Archive and Copy to Container
-	// ============================================
+	// copy code to the container
 	sectionStart = time.Now()
-
-	// Create TAR archive directly from code string (no file I/O)
-	tarData, err := createTarArchiveFromMemory("main.cpp", code)
+	fileName, err := exec.CopyCodeToFile(doc, lang, code)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create tar archive: %v", err)
+		return nil, err
 	}
-
-	// Copy the TAR archive to the container's /workspace containers
-	err = doc.Cli.CopyToContainer(doc.Ctx, doc.ContainerResp.ID, "/workspace", tarData, container.CopyToContainerOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to copy source to container: %v", err)
-	}
-
-	fmt.Printf("⏱️  Section 3 (TAR Create & Copy): %v\n", time.Since(sectionStart))
-
+	fmt.Println(fileName)
 	// ============================================
 	// SECTION 4: Compile C++ Code Inside Container
 	// ============================================
@@ -165,37 +160,6 @@ func RunCppWithTestcases(m *containers.ContainersPoolManger, code string, testca
 // ============================================
 // HELPER FUNCTION: Create TAR Archive Directly from Memory
 // ============================================
-func createTarArchiveFromMemory(filename, content string) (io.Reader, error) {
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-
-	// Convert string content to bytes (no file I/O)
-	fileContent := []byte(content)
-
-	// Create TAR header for the file
-	header := &tar.Header{
-		Name: filename,                // File name in the archive
-		Mode: 0644,                    // File permissions
-		Size: int64(len(fileContent)), // File size
-	}
-
-	// Write header to TAR archive
-	if err := tw.WriteHeader(header); err != nil {
-		return nil, fmt.Errorf("failed to write tar header: %v", err)
-	}
-
-	// Write file content to TAR archive (directly from memory)
-	if _, err := tw.Write(fileContent); err != nil {
-		return nil, fmt.Errorf("failed to write file content to tar: %v", err)
-	}
-
-	// Close TAR writer
-	if err := tw.Close(); err != nil {
-		return nil, fmt.Errorf("failed to close tar writer: %v", err)
-	}
-
-	return &buf, nil
-}
 
 func demultiplexDockerOutput(data []byte) (stdout, stderr string) {
 	var stdoutBuf, stderrBuf bytes.Buffer

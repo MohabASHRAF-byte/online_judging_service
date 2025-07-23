@@ -97,6 +97,7 @@ func (manger *ContainersPoolManger) FreeContainer(container *models.Container) {
 }
 
 func (manger *ContainersPoolManger) newDockerContainer(lang models.Language) (*models.Container, error) {
+
 	var docker = &models.Container{
 		Ctx:          context.Background(),
 		ID:           manger.NextID,
@@ -106,7 +107,15 @@ func (manger *ContainersPoolManger) newDockerContainer(lang models.Language) (*m
 		LastModified: time.Now(),
 	}
 	manger.NextID++
+	//
+	var dockerImage models.LanguageDockerImageName
 
+	if lang == models.Cpp {
+		dockerImage = models.CppImage
+	} else if lang == models.Python {
+		dockerImage = models.PythonImage
+	}
+	//
 	var err error
 	docker.Cli, err = client.NewClientWithOpts(client.FromEnv)
 	if err != nil {
@@ -114,7 +123,7 @@ func (manger *ContainersPoolManger) newDockerContainer(lang models.Language) (*m
 	}
 	docker.Cli.NegotiateAPIVersion(docker.Ctx)
 	containerConfig := &container.Config{
-		Image:      string(lang),
+		Image:      string(dockerImage),
 		Tty:        false,
 		Cmd:        []string{"sleep", "600"},
 		WorkingDir: "/workspace",

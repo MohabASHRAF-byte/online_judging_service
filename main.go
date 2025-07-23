@@ -1,13 +1,36 @@
 package main
 
-import (
-	"fmt"
-	"judging-service/containers"
-)
+import "fmt"
+
+type Shape interface {
+	Area() float64
+	Perimeter() float64
+}
+
+type Rectangle struct {
+	Width, Height float64
+}
+type Square struct {
+	Width, Height float64
+}
+
+func (r Rectangle) Area() float64      { return r.Width * r.Height }
+func (r Rectangle) Perimeter() float64 { return 2 * (r.Width + r.Height) }
+
+func (s Square) Area() float64      { return s.Width * 1 }
+func (s Square) Perimeter() float64 { return 2 * (s.Width + s.Height) }
 
 func main() {
-	var poolManger = containers.NewContainersPoolManger(4)
-	fmt.Println(poolManger.Limit)
+	r := Rectangle{Width: 3, Height: 4}
+	s := Square{Width: 5, Height: 5}
+
+	// Slice of Shape, holding both Rectangle and Square
+	shapes := []Shape{r, s}
+
+	// Iterate over shapes and call their methods
+	for _, shape := range shapes {
+		fmt.Printf("Area: %.1f, Perimeter: %.1f\n", shape.Area(), shape.Perimeter())
+	}
 }
 
 /*log.Println("Starting Simple Judging Service...")
