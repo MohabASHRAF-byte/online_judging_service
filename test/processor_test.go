@@ -229,3 +229,91 @@ int main() {
 		t.Errorf("Expected output to contain '1 ' and '100 ', but got: %s", output)
 	}
 }
+
+func TestRunCppWithTestcases_CompilationError2(t *testing.T) {
+	t.Parallel()
+
+	code := `
+#include <iostream>
+using namespace std;
+
+int main() {
+   for(int i =0 ;i<5 ;i--)cout<<" "<<endl
+   return 0;
+}`
+
+	testcases := []string{""}
+
+	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp)
+
+	// We expect an error due to compilation failure
+	if err == nil {
+		t.Fatalf("Expected Compilation error, but got no error")
+	}
+
+	if !strings.Contains(err.Error(), "Compilation") {
+		t.Errorf("Expected compilation error message, but got: %v", err)
+	}
+
+	// Should have no outputs since compilation faled
+	if outputs != nil && len(outputs) > 0 {
+		t.Errorf("Expected no outputs due to compilation error, but got: %v", outputs)
+	}
+}
+
+func TestRunCppWithTestcases_TimeLimit_compile(t *testing.T) {
+	t.Parallel()
+
+	code := `
+#include <iostream>
+using namespace std;
+
+int main() {
+   for(int i =0 ;i<5 ;i/=5,i--)cout<<" "<<endl;
+   return 0;
+}`
+
+	testcases := []string{""}
+
+	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp)
+
+	if err == nil {
+		t.Fatalf("Expected Time Limit error, but got no error")
+	}
+	if !strings.Contains(err.Error(), "Time Limit") {
+		t.Errorf("Expected Time Limit error message, but got: %v", err)
+	}
+
+	if outputs != nil && len(outputs) > 0 {
+		t.Errorf("Expected no outputs due to compilation error, but got: %v", outputs)
+	}
+}
+
+func TestRunCppWithTestcases_TimeLimit_runtime(t *testing.T) {
+	t.Parallel()
+
+	code := `
+#include <iostream>
+using namespace std;
+
+int main() {
+int n;cin>>n;
+   for(int i =0 ;i<n ;i++)cout<<" "<<endl;
+   return 0;
+}`
+
+	testcases := []string{"10000000"}
+
+	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp)
+
+	if err == nil {
+		t.Fatalf("Expected Time Limit error, but got no error")
+	}
+	if !strings.Contains(err.Error(), "Time Limit") {
+		t.Errorf("Expected Time Limit error message, but got: %v", err)
+	}
+
+	if outputs != nil && len(outputs) > 0 {
+		t.Errorf("Expected no outputs due to compilation error, but got: %v", outputs)
+	}
+}

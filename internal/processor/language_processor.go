@@ -1,10 +1,14 @@
 package processor
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"judging-service/containers"
+	"judging-service/internal/customErrors"
 	"judging-service/internal/models"
 	"judging-service/internal/service"
+	"log"
 	"time"
 )
 
@@ -22,7 +26,6 @@ func RunCodeWithTestcases(m *containers.ContainersPoolManger, code string, testc
 	return outputs, nil
 }
 func RuntestCase(m *containers.ContainersPoolManger, code string, testcase string, codeLanguage string) (*string, error) {
-
 	var exec models.LangContainer
 	var lang models.Language
 	overallStart := time.Now()
@@ -43,18 +46,35 @@ func RuntestCase(m *containers.ContainersPoolManger, code string, testcase strin
 	if err != nil {
 		return nil, err
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-	// compile code if compilable
-	compileCommand, err := exec.CompileCode(doc, fileName)
+	// Pass the context to the function you want to time out.
+	compileCommand, err := exec.CompileCode(doc, fileName, ctx)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, &customErrors.TimeLimitExceededError{
+				Limit: 1,
+			}
+		}
+		return nil, fmt.Errorf("compilation failed: %w", err)
 	}
-
+	log.Println("[DEBUG: 12] Compilation successful")
 	// run all test cases
-	output, err := exec.RunTestCases(doc, testcase, compileCommand)
+	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	log.Println("[DEBUG: 13] Compilation successful")
+
+	output, err := exec.RunTestCases(doc, testcase, compileCommand, ctx)
+	if errors.Is(err, context.DeadlineExceeded) {
+		return nil, &customErrors.TimeLimitExceededError{}
+	}
 	if err != nil {
+		log.Println("[DEBUG:14] Compilation successful")
 		return nil, err
 	}
+	log.Println("[DEBUG: 13] Compilation successful")
+
 	fmt.Printf("🎯 Total Execution Time: %v\n", time.Since(overallStart))
 	return &output, nil
 }

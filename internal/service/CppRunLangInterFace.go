@@ -1,10 +1,14 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"github.com/docker/docker/api/types/container"
 	"io"
+	"judging-service/internal/customErrors"
 	"judging-service/internal/models"
+	"log"
 	"strings"
 	"time"
 )
@@ -22,7 +26,42 @@ func (_ CppRunLangInterFace) CopyCodeToFile(containerCpy *models.Container, code
 
 }
 
-func (_ CppRunLangInterFace) CompileCode(containerCpy *models.Container, fileName string) (string, error) {
+// ctxReader wraps an io.Reader to make it respect a context's deadline.
+func ctxReader(ctx context.Context, r io.Reader) io.Reader {
+	return &cancellableReader{ctx: ctx, r: r}
+}
+
+type cancellableReader struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+func (cr *cancellableReader) Read(p []byte) (int, error) {
+	// Check if context is already done.
+	if err := cr.ctx.Err(); err != nil {
+		return 0, err
+	}
+	// Perform the read in a goroutine so we can select on the context.
+	type result struct {
+		n   int
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		n, err := cr.r.Read(p)
+		done <- result{n, err}
+	}()
+
+	select {
+	case res := <-done:
+		return res.n, res.err
+	case <-cr.ctx.Done():
+		return 0, cr.ctx.Err()
+	}
+}
+
+func (_ CppRunLangInterFace) CompileCode(containerCpy *models.Container, fileName string, ctx context.Context) (string, error) {
+	log.Println("[DEBUG: 1] Entering CompileCode function.")
 
 	var executableFileCommand = "./solution"
 	compileExecConfig := container.ExecOptions{
@@ -31,61 +70,89 @@ func (_ CppRunLangInterFace) CompileCode(containerCpy *models.Container, fileNam
 		AttachStderr: true,
 		WorkingDir:   "/workspace",
 	}
+	log.Println("[DEBUG: 2] Compile exec config created.")
 
-	compileExecResp, err := containerCpy.Cli.ContainerExecCreate(containerCpy.Ctx, containerCpy.ContainerResp.ID, compileExecConfig)
-	if err != nil {
-		return "", fmt.Errorf("failed to create compile exec: %v", err)
+	log.Println("[DEBUG: 3] Attempting to create compile exec in container...")
+	compileExecResp, err := containerCpy.Cli.ContainerExecCreate(ctx, containerCpy.ContainerResp.ID, compileExecConfig)
+
+	// NOTE: This error handling logic is preserved from your original code.
+	// It is un-idiomatic but logged for clarity.
+	if err != nil && errors.Is(err, context.DeadlineExceeded) {
+		log.Printf("[DEBUG: 3.1] Caught timeout error during ContainerExecCreate: %v", err)
+		return "", &customErrors.TimeLimitExceededError{Limit: 1}
 	}
 
-	compileAttachResp, err := containerCpy.Cli.ContainerExecAttach(containerCpy.Ctx, compileExecResp.ID, container.ExecStartOptions{})
 	if err != nil {
+		log.Printf("[DEBUG: 3.2] Caught a non-timeout error during ContainerExecCreate: %v", err)
+		return "", fmt.Errorf("failed to create compile exec: %v", err)
+	}
+	log.Printf("[DEBUG: 4] Successfully created compile exec with ID: %s", compileExecResp.ID)
+
+	log.Println("[DEBUG: 5] Attaching to compile exec streams...")
+	compileAttachResp, err := containerCpy.Cli.ContainerExecAttach(ctx, compileExecResp.ID, container.ExecStartOptions{})
+	if err != nil {
+		log.Printf("[DEBUG: 5.1] Error attaching to compile exec: %v", err)
 		return "", fmt.Errorf("failed to attach to compile exec: %v", err)
 	}
 	defer compileAttachResp.Close()
+	log.Println("[DEBUG: 6] Successfully attached to compile exec.")
 
-	compileOutput, err := io.ReadAll(compileAttachResp.Reader)
-	if err != nil {
+	log.Println("[DEBUG: 7] Reading all output from compile exec... (This is where it will likely hang if the context expires)")
+	compileOutputBytes, err := io.ReadAll(compileAttachResp.Reader)
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		// THIS BLOCK WILL LIKELY NEVER BE REACHED because io.ReadAll doesn't respect the context.
+		log.Printf("[DEBUG: 7.1] Caught context deadline exceeded error after io.ReadAll returned.")
+		return "", err
+	} else if err != nil {
+		log.Printf("[DEBUG: 7.2] Caught a non-timeout error during io.ReadAll: %v", err)
 		return "", fmt.Errorf("failed to read compile output: %v", err)
 	}
+	log.Printf("[DEBUG: 8] Finished reading from exec stream. Read %d bytes.", len(compileOutputBytes))
 
-	compileInspect, err := containerCpy.Cli.ContainerExecInspect(containerCpy.Ctx, compileExecResp.ID)
+	log.Println("[DEBUG: 9] Inspecting exec result...")
+	compileInspect, err := containerCpy.Cli.ContainerExecInspect(ctx, compileExecResp.ID)
 	if err != nil {
+		log.Printf("[DEBUG: 9.1] Error inspecting compile exec: %v", err)
 		return "", fmt.Errorf("failed to inspect compile exec: %v", err)
 	}
+	log.Printf("[DEBUG: 10] Exec inspect complete. ExitCode: %d", compileInspect.ExitCode)
 
 	if compileInspect.ExitCode != 0 {
-		return "", fmt.Errorf("compilation failed: %s", string(compileOutput))
+		log.Printf("[DEBUG: 10.1] Compilation failed with non-zero exit code. Output: %s", string(compileOutputBytes))
+		return "", &customErrors.CompilationError{}
 	}
+	log.Println("[DEBUG: 11] Compilation successful. Returning executable command.")
 
 	return executableFileCommand, nil
 }
 
-func (_ CppRunLangInterFace) RunTestCases(containerCpy *models.Container, testcase string, compileCommand string) (string, error) {
-
-	//var output string
+func (_ CppRunLangInterFace) RunTestCases(containerCpy *models.Container, testcase string, compileCommand string, ctx context.Context) (string, error) {
+	log.Println("[DEBUG:12] ")
 
 	testcaseStart := time.Now()
 	runExecConfig := container.ExecOptions{
-		Cmd:          []string{compileCommand}, // Run the compiled executable
-		AttachStdin:  true,                     // Attach stdin to provide input
-		AttachStdout: true,                     // Capture stdout
-		AttachStderr: false,                    // Don't capture stderr
-		WorkingDir:   "/workspace",             // Execute in workspace
+		Cmd:          []string{compileCommand},
+		AttachStdin:  true,
+		AttachStdout: true,
+		AttachStderr: false,
+		WorkingDir:   "/workspace",
 	}
+	log.Println("[DEBUG:13] ")
 
-	// Create execution instance for running the program
-	runExecResp, err := containerCpy.Cli.ContainerExecCreate(containerCpy.Ctx, containerCpy.ContainerResp.ID, runExecConfig)
+	runExecResp, err := containerCpy.Cli.ContainerExecCreate(ctx, containerCpy.ContainerResp.ID, runExecConfig)
 	if err != nil {
 		return "", fmt.Errorf("failed to create run exec for testcase : %v", err)
 	}
+	log.Println("[DEBUG:14] ")
 
-	// Start execution and attach to streams
-	runAttachResp, err := containerCpy.Cli.ContainerExecAttach(containerCpy.Ctx, runExecResp.ID, container.ExecStartOptions{})
+	runAttachResp, err := containerCpy.Cli.ContainerExecAttach(ctx, runExecResp.ID, container.ExecStartOptions{})
 	if err != nil {
 		return "", fmt.Errorf("failed to attach to run exec for testcase : %v", err)
 	}
+	defer runAttachResp.Close()
+	log.Println("[DEBUG:15] ")
 
-	// Send testcase input to the program via stdin
 	go func() {
 		defer runAttachResp.CloseWrite()
 		_, err := runAttachResp.Conn.Write([]byte(testcase + "\n"))
@@ -93,27 +160,26 @@ func (_ CppRunLangInterFace) RunTestCases(containerCpy *models.Container, testca
 			fmt.Printf("Warning: failed to write input for testcase: %v\n", err)
 		}
 	}()
+	log.Println("[DEBUG:16] ")
 
-	// Read program output with proper stream handling
-	output, err := io.ReadAll(runAttachResp.Reader)
-	runAttachResp.Close()
+	output, err := io.ReadAll(ctxReader(ctx, runAttachResp.Reader))
+	log.Println("[DEBUG:17] ")
 
 	if err != nil {
-		return "", fmt.Errorf("failed to read output for testcase %v", err)
+		return "", err
 	}
 
-	// Docker multiplexes stdout/stderr, so we need to demultiplex
 	stdoutStr, stderrStr := demultiplexDockerOutput(output)
 
-	// Use only stdout for the result
 	cleanOutput := strings.TrimSpace(stdoutStr)
+	log.Println("[DEBUG:18] ")
 
 	if stderrStr != "" {
 		fmt.Printf("⚠️  Stderr for testcase: %s\n", stderrStr)
 	}
 
 	testcaseTime := time.Since(testcaseStart)
-	fmt.Printf("✓ Testcase %d completed in: '%s'\n", testcaseTime, cleanOutput)
+	fmt.Printf("✓ Testcase completed in: %s. Output: '%s'\n", testcaseTime, cleanOutput)
 
 	return cleanOutput, nil
 }
