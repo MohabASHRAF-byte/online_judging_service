@@ -3,76 +3,28 @@ package processor
 import (
 	"archive/tar"
 	"bytes"
-	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
+	"judging-service/containers"
+	"judging-service/internal/models"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/client"
 )
 
-func RunCppWithTestcases(code string, testcases []string) ([]string, error) {
+func RunCppWithTestcases(m *containers.ContainersPoolManger, code string, testcases []string) ([]string, error) {
+
 	var outputs []string
-
-	// Track overall execution time
-	overallStart := time.Now()
-
-	// ============================================
-	// SECTION 1: Initialize Docker Client & Context
-	// ============================================
 	sectionStart := time.Now()
-
-	ctx := context.Background()
-
-	cli, err := client.NewClientWithOpts(client.FromEnv)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Docker client: %v", err)
-	}
-	cli.NegotiateAPIVersion(ctx)
-
-	fmt.Printf("⏱️  Section 1 (Docker Client Init): %v\n", time.Since(sectionStart))
-
-	// ============================================
-	// SECTION 2: Create and Start Docker Container
-	// ============================================
-	sectionStart = time.Now()
-
-	containerConfig := &container.Config{
-		Image:      "gcc:latest",             // Use GCC image for C++ compilation
-		Tty:        false,                    // Don't allocate pseudo-TTY
-		Cmd:        []string{"sleep", "600"}, // Keep container alive for operations
-		WorkingDir: "/workspace",             // Set working containers inside container
-	}
-
-	// Host configuration (optional: add resource limits here)
-	hostConfig := &container.HostConfig{}
-
-	// Create the container
-	containerResp, err := cli.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create container: %v", err)
-	}
-
-	// Start the container
-	err = cli.ContainerStart(ctx, containerResp.ID, container.StartOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to start container: %v", err)
-	}
-
-	// Ensure container cleanup when function ends
-	defer func() {
-		cleanupStart := time.Now()
-		cli.ContainerStop(ctx, containerResp.ID, container.StopOptions{})
-		cli.ContainerRemove(ctx, containerResp.ID, container.RemoveOptions{Force: true})
-		fmt.Printf("🧹 Container Cleanup: %v\n", time.Since(cleanupStart))
-		fmt.Printf("🎯 Total Execution Time: %v\n", time.Since(overallStart))
-	}()
-
+	overallStart := time.Now()
 	fmt.Printf("⏱️  Section 2 (Container Create & Start): %v\n", time.Since(sectionStart))
+	doc, err := m.GetContainer(models.Cpp)
+	defer m.FreeContainer(doc)
 
+	fmt.Printf(strconv.Itoa(doc.ID))
 	// ============================================
 	// SECTION 3: Create TAR Archive and Copy to Container
 	// ============================================
@@ -85,7 +37,7 @@ func RunCppWithTestcases(code string, testcases []string) ([]string, error) {
 	}
 
 	// Copy the TAR archive to the container's /workspace containers
-	err = cli.CopyToContainer(ctx, containerResp.ID, "/workspace", tarData, container.CopyToContainerOptions{})
+	err = doc.Cli.CopyToContainer(doc.Ctx, doc.ContainerResp.ID, "/workspace", tarData, container.CopyToContainerOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to copy source to container: %v", err)
 	}
@@ -106,13 +58,13 @@ func RunCppWithTestcases(code string, testcases []string) ([]string, error) {
 	}
 
 	// Create execution instance for compilation
-	compileExecResp, err := cli.ContainerExecCreate(ctx, containerResp.ID, compileExecConfig)
+	compileExecResp, err := doc.Cli.ContainerExecCreate(doc.Ctx, doc.ContainerResp.ID, compileExecConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create compile exec: %v", err)
 	}
 
 	// Start compilation and attach to streams
-	compileAttachResp, err := cli.ContainerExecAttach(ctx, compileExecResp.ID, container.ExecStartOptions{})
+	compileAttachResp, err := doc.Cli.ContainerExecAttach(doc.Ctx, compileExecResp.ID, container.ExecStartOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to attach to compile exec: %v", err)
 	}
@@ -125,7 +77,7 @@ func RunCppWithTestcases(code string, testcases []string) ([]string, error) {
 	}
 
 	// Check if compilation was successful
-	compileInspect, err := cli.ContainerExecInspect(ctx, compileExecResp.ID)
+	compileInspect, err := doc.Cli.ContainerExecInspect(doc.Ctx, compileExecResp.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect compile exec: %v", err)
 	}
@@ -157,13 +109,13 @@ func RunCppWithTestcases(code string, testcases []string) ([]string, error) {
 		}
 
 		// Create execution instance for running the program
-		runExecResp, err := cli.ContainerExecCreate(ctx, containerResp.ID, runExecConfig)
+		runExecResp, err := doc.Cli.ContainerExecCreate(doc.Ctx, doc.ContainerResp.ID, runExecConfig)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create run exec for testcase %d: %v", i+1, err)
 		}
 
 		// Start execution and attach to streams
-		runAttachResp, err := cli.ContainerExecAttach(ctx, runExecResp.ID, container.ExecStartOptions{})
+		runAttachResp, err := doc.Cli.ContainerExecAttach(doc.Ctx, runExecResp.ID, container.ExecStartOptions{})
 		if err != nil {
 			return nil, fmt.Errorf("failed to attach to run exec for testcase %d: %v", i+1, err)
 		}
@@ -202,7 +154,11 @@ func RunCppWithTestcases(code string, testcases []string) ([]string, error) {
 
 	allTestcasesTime := time.Since(sectionStart)
 	fmt.Printf("⏱️  Section 5 (All Testcases): %v\n", allTestcasesTime)
-
+	cleanupStart := time.Now()
+	//doc.Cli.ContainerStop(doc.Ctx, doc.ContainerResp.ID, container.StopOptions{})
+	//doc.Cli.ContainerRemove(doc.Ctx, doc.ContainerResp.ID, container.RemoveOptions{Force: true})
+	fmt.Printf("🧹 Container Cleanup: %v\n", time.Since(cleanupStart))
+	fmt.Printf("🎯 Total Execution Time: %v\n", time.Since(overallStart))
 	return outputs, nil
 }
 

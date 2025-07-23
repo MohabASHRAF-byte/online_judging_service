@@ -1,12 +1,16 @@
 package processor
 
 import (
+	"judging-service/containers"
 	"judging-service/internal/processor"
 	"strings"
 	"testing"
 )
 
+var manger = containers.NewContainersPoolManger(1)
+
 func TestRunCppWithTestcases_SimpleHelloWorld(t *testing.T) {
+	t.Parallel()
 	code := `#include <iostream>
 using namespace std;
 
@@ -18,7 +22,7 @@ int main() {
 	testcases := []string{""}
 	expected := []string{"Hello World!"}
 
-	outputs, err := processor.RunCppWithTestcases(code, testcases)
+	outputs, err := processor.RunCppWithTestcases(manger, code, testcases)
 
 	if err != nil {
 		t.Fatalf("Expected no error, but got: %v", err)
@@ -36,6 +40,7 @@ int main() {
 }
 
 func TestRunCppWithTestcases_InputOutput(t *testing.T) {
+	t.Parallel()
 	code := `#include <iostream>
 #include <string>
 using namespace std;
@@ -50,7 +55,7 @@ int main() {
 	testcases := []string{"World", "Alice", "Bob"}
 	expected := []string{"Hello World!", "Hello Alice!", "Hello Bob!"}
 
-	outputs, err := processor.RunCppWithTestcases(code, testcases)
+	outputs, err := processor.RunCppWithTestcases(manger, code, testcases)
 
 	if err != nil {
 		t.Fatalf("Expected no error, but got: %v", err)
@@ -68,6 +73,7 @@ int main() {
 }
 
 func TestRunCppWithTestcases_MathOperations(t *testing.T) {
+	t.Parallel()
 	code := `#include <iostream>
 using namespace std;
 
@@ -81,7 +87,7 @@ int main() {
 	testcases := []string{"3 4", "10 20", "100 50"}
 	expected := []string{"7", "30", "150"}
 
-	outputs, err := processor.RunCppWithTestcases(code, testcases)
+	outputs, err := processor.RunCppWithTestcases(manger, code, testcases)
 
 	if err != nil {
 		t.Fatalf("Expected no error, but got: %v", err)
@@ -100,6 +106,8 @@ int main() {
 
 func TestRunCppWithTestcases_CompilationError(t *testing.T) {
 	// Invalid C++ code that should fail to compile
+	t.Parallel()
+
 	code := `#include <iostream>
 using namespace std;
 
@@ -111,7 +119,7 @@ int main() {
 
 	testcases := []string{""}
 
-	outputs, err := processor.RunCppWithTestcases(code, testcases)
+	outputs, err := processor.RunCppWithTestcases(manger, code, testcases)
 
 	// We expect an error due to compilation failure
 	if err == nil {
@@ -129,6 +137,8 @@ int main() {
 }
 
 func TestRunCppWithTestcases_MultipleInputsPerCase(t *testing.T) {
+	t.Parallel()
+
 	code := `#include <iostream>
 using namespace std;
 
@@ -145,7 +155,7 @@ int main() {
 	testcases := []string{"3", "5", "1"}
 	expected := []string{"1 2 3", "1 2 3 4 5", "1"}
 
-	outputs, err := processor.RunCppWithTestcases(code, testcases)
+	outputs, err := processor.RunCppWithTestcases(manger, code, testcases)
 
 	if err != nil {
 		t.Fatalf("Expected no error, but got: %v", err)
@@ -163,6 +173,8 @@ int main() {
 }
 
 func TestRunCppWithTestcases_EmptyTestCases(t *testing.T) {
+	t.Parallel()
+
 	code := `#include <iostream>
 using namespace std;
 
@@ -173,7 +185,7 @@ int main() {
 
 	testcases := []string{} // Empty test cases
 
-	outputs, err := processor.RunCppWithTestcases(code, testcases)
+	outputs, err := processor.RunCppWithTestcases(manger, code, testcases)
 
 	if err != nil {
 		t.Fatalf("Expected no error, but got: %v", err)
@@ -185,6 +197,8 @@ int main() {
 }
 
 func TestRunCppWithTestcases_LargeOutput(t *testing.T) {
+	t.Parallel()
+
 	code := `#include <iostream>
 using namespace std;
 
@@ -198,7 +212,7 @@ int main() {
 
 	testcases := []string{""}
 
-	outputs, err := processor.RunCppWithTestcases(code, testcases)
+	outputs, err := processor.RunCppWithTestcases(manger, code, testcases)
 
 	if err != nil {
 		t.Fatalf("Expected no error, but got: %v", err)
