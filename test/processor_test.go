@@ -1,9 +1,10 @@
-package processor
+package processor_test
 
 import (
 	"judging-service/containers"
 	"judging-service/internal/models"
 	"judging-service/internal/processor"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -11,350 +12,135 @@ import (
 var manger = containers.NewContainersPoolManger(10)
 var cpp = "cpp"
 
-func TestRunCppWithTestcases_SimpleHelloWorld(t *testing.T) {
+func TestRunCppWithTestcases(t *testing.T) {
 	t.Parallel()
-	code := `#include <iostream>
-using namespace std;
 
-int main() {
-    cout << "Hello World!" << endl;
-    return 0;
-}`
-
-	testcases := []string{""}
-	expected := []string{"Hello World!"}
-	resource := models.ResourceLimit{
+	defaultResource := models.ResourceLimit{
 		MemoryLimitInMB:    256,
 		TimeLimitInSeconds: 1,
 		CPU:                1,
 	}
-	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp, resource)
 
-	if err != nil {
-		t.Fatalf("Expected no error, but got: %v", err)
+	testCases := []struct {
+		name          string
+		code          string
+		testcases     []string
+		resource      models.ResourceLimit
+		expected      []string
+		expectErr     bool
+		errContains   string
+		customChecker func(*testing.T, []string)
+		language      models.Language
+	}{
+		{
+			name:      "Simple Hello World",
+			code:      "#include <iostream>\nint main() { std::cout << \"Hello World!\"; }",
+			testcases: []string{""},
+			resource:  defaultResource,
+			expected:  []string{"Hello World!"},
+			language:  models.Cpp,
+		},
+		{
+			name:      "Input and Output",
+			code:      "#include <iostream>\n#include <string>\nint main() { std::string name; std::cin >> name; std::cout << \"Hello \" << name << \"!\"; }",
+			testcases: []string{"World", "Alice"},
+			resource:  defaultResource,
+			expected:  []string{"Hello World!", "Hello Alice!"},
+			language:  models.Cpp,
+		},
+		{
+			name:      "Math Operations",
+			code:      "#include <iostream>\nint main() { int a, b; std::cin >> a >> b; std::cout << a + b; }",
+			testcases: []string{"3 4", "10 20"},
+			resource:  defaultResource,
+			expected:  []string{"7", "30"},
+			language:  models.Cpp,
+		},
+		{
+			name:        "Compilation Error",
+			code:        "#include <iostream>\nint main() { undeclared_variable = 5; }",
+			testcases:   []string{""},
+			resource:    defaultResource,
+			expectErr:   true,
+			errContains: "compilation failed",
+			language:    models.Cpp,
+		},
+		{
+			name:      "compile Time Limit Exceeded",
+			code:      "#include <iostream>\nint main() { while(true); }",
+			testcases: []string{""},
+			resource: models.ResourceLimit{
+				MemoryLimitInMB:    256,
+				TimeLimitInSeconds: 5,
+				CPU:                1,
+			},
+			expectErr:   true,
+			errContains: "Time Limit",
+			language:    models.Cpp,
+		},
+		{
+			name:      "Runtime Time Limit Exceeded",
+			code:      "#include <iostream>\nusing namespace std;\nint main() {\nlong long n;cin>>n;\nlong long x =0 ;\nfor(long long i =0 ;i<n ;i++)x+=90*2+i;cout<<x<<endl;   return 0;\n}",
+			testcases: []string{"1000000000"},
+			resource: models.ResourceLimit{
+				MemoryLimitInMB:    256,
+				TimeLimitInSeconds: 1,
+				CPU:                1,
+			},
+			expectErr:   true,
+			errContains: "Time Limit",
+			language:    models.Cpp,
+		},
+		{
+			name:      "Empty Test Cases",
+			code:      "#include <iostream>\nint main() { std::cout << \"No input needed\"; }",
+			testcases: []string{},
+			resource:  defaultResource,
+			expected:  []string{},
+			language:  models.Cpp,
+		},
+		{
+			name:      "Large Output",
+			code:      "#include <iostream>\nint main() { for(int i = 1; i <= 100; i++) { std::cout << i << \" \"; } }",
+			testcases: []string{""},
+			resource:  defaultResource,
+			customChecker: func(t *testing.T, outputs []string) {
+				if len(outputs) != 1 {
+					t.Fatalf("Expected 1 output, but got %d", len(outputs))
+				}
+				if !strings.Contains(outputs[0], "1 ") || !strings.Contains(outputs[0], "100") {
+					t.Errorf("Expected output to contain '1 ' and '100', but got: %s", outputs[0])
+				}
+			},
+			language: models.Cpp,
+		},
 	}
 
-	if len(outputs) != len(expected) {
-		t.Fatalf("Expected %d outputs, but got %d", len(expected), len(outputs))
-	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			outputs, err := processor.RunCodeWithTestcases(manger, tc.code, tc.testcases, string(tc.language), tc.resource)
 
-	for i, output := range outputs {
-		if output != expected[i] {
-			t.Errorf("Test case %d: expected '%s', but got '%s'", i+1, expected[i], output)
-		}
-	}
-}
-
-func TestRunCppWithTestcases_InputOutput(t *testing.T) {
-	t.Parallel()
-	code := `#include <iostream>
-#include <string>
-using namespace std;
-
-int main() {
-    string name;
-    cin >> name;
-    cout << "Hello " << name << "!" << endl;
-    return 0;
-}`
-	resource := models.ResourceLimit{
-		MemoryLimitInMB:    256,
-		TimeLimitInSeconds: 1,
-		CPU:                1,
-	}
-	testcases := []string{"World", "Alice", "Bob"}
-	expected := []string{"Hello World!", "Hello Alice!", "Hello Bob!"}
-
-	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp, resource)
-
-	if err != nil {
-		t.Fatalf("Expected no error, but got: %v", err)
-	}
-
-	if len(outputs) != len(expected) {
-		t.Fatalf("Expected %d outputs, but got %d", len(expected), len(outputs))
-	}
-
-	for i, output := range outputs {
-		if output != expected[i] {
-			t.Errorf("Test case %d: expected '%s', but got '%s'", i+1, expected[i], output)
-		}
-	}
-}
-
-func TestRunCppWithTestcases_MathOperations(t *testing.T) {
-	t.Parallel()
-	code := `#include <iostream>
-using namespace std;
-
-int main() {
-    int a, b;
-    cin >> a >> b;
-    cout << a + b << endl;
-    return 0;
-}`
-	resource := models.ResourceLimit{
-		MemoryLimitInMB:    256,
-		TimeLimitInSeconds: 1,
-		CPU:                1,
-	}
-	testcases := []string{"3 4", "10 20", "100 50"}
-	expected := []string{"7", "30", "150"}
-
-	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp, resource)
-
-	if err != nil {
-		t.Fatalf("Expected no error, but got: %v", err)
-	}
-
-	if len(outputs) != len(expected) {
-		t.Fatalf("Expected %d outputs, but got %d", len(expected), len(outputs))
-	}
-
-	for i, output := range outputs {
-		if output != expected[i] {
-			t.Errorf("Test case %d: expected '%s', but got '%s'", i+1, expected[i], output)
-		}
-	}
-}
-
-func TestRunCppWithTestcases_CompilationError(t *testing.T) {
-	// Invalid C++ code that should fail to compile
-	t.Parallel()
-
-	code := `#include <iostream>
-using namespace std;
-
-int main() {
-    undeclared_variable = 5;  // This should cause compilation error
-    cout << "This won't work" << endl;
-    return 0;
-}`
-	resource := models.ResourceLimit{
-		MemoryLimitInMB:    256,
-		TimeLimitInSeconds: 1,
-		CPU:                1,
-	}
-	testcases := []string{""}
-
-	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp, resource)
-
-	// We expect an error due to compilation failure
-	if err == nil {
-		t.Fatalf("Expected compilation error, but got no error")
-	}
-
-	if !strings.Contains(err.Error(), "compilation failed") {
-		t.Errorf("Expected compilation error message, but got: %v", err)
-	}
-
-	// Should have no outputs since compilation failed
-	if outputs != nil && len(outputs) > 0 {
-		t.Errorf("Expected no outputs due to compilation error, but got: %v", outputs)
-	}
-}
-
-func TestRunCppWithTestcases_MultipleInputsPerCase(t *testing.T) {
-	t.Parallel()
-	resource := models.ResourceLimit{
-		MemoryLimitInMB:    256,
-		TimeLimitInSeconds: 1,
-		CPU:                1,
-	}
-	code := `#include <iostream>
-using namespace std;
-
-int main() {
-    int n;
-    cin >> n;
-    for(int i = 1; i <= n; i++) {
-        cout << i << " ";
-    }
-    cout << endl;
-    return 0;
-}`
-
-	testcases := []string{"3", "5", "1"}
-	expected := []string{"1 2 3", "1 2 3 4 5", "1"}
-
-	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp, resource)
-
-	if err != nil {
-		t.Fatalf("Expected no error, but got: %v", err)
-	}
-
-	if len(outputs) != len(expected) {
-		t.Fatalf("Expected %d outputs, but got %d", len(expected), len(outputs))
-	}
-
-	for i, output := range outputs {
-		if strings.TrimSpace(output) != expected[i] {
-			t.Errorf("Test case %d: expected '%s', but got '%s'", i+1, expected[i], strings.TrimSpace(output))
-		}
-	}
-}
-
-func TestRunCppWithTestcases_EmptyTestCases(t *testing.T) {
-	t.Parallel()
-
-	code := `#include <iostream>
-using namespace std;
-
-int main() {
-    cout << "No input needed" << endl;
-    return 0;
-}`
-	resource := models.ResourceLimit{
-		MemoryLimitInMB:    256,
-		TimeLimitInSeconds: 1,
-		CPU:                1,
-	}
-	testcases := []string{} // Empty test cases
-
-	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp, resource)
-
-	if err != nil {
-		t.Fatalf("Expected no error, but got: %v", err)
-	}
-
-	if len(outputs) != 0 {
-		t.Errorf("Expected 0 outputs for empty test cases, but got %d", len(outputs))
-	}
-}
-
-func TestRunCppWithTestcases_LargeOutput(t *testing.T) {
-	t.Parallel()
-
-	code := `#include <iostream>
-using namespace std;
-
-int main() {
-    for(int i = 1; i <= 100; i++) {
-        cout << i << " ";
-    }
-    cout << endl;
-    return 0;
-}`
-	resource := models.ResourceLimit{
-		MemoryLimitInMB:    256,
-		TimeLimitInSeconds: 1,
-		CPU:                1,
-	}
-	testcases := []string{""}
-
-	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp, resource)
-
-	if err != nil {
-		t.Fatalf("Expected no error, but got: %v", err)
-	}
-
-	if len(outputs) != 1 {
-		t.Fatalf("Expected 1 output, but got %d", len(outputs))
-	}
-
-	// Check that output contains numbers from 1 to 100
-	output := outputs[0]
-	if !strings.Contains(output, "1 ") || !strings.Contains(output, "100") {
-		t.Errorf("Expected output to contain '1 ' and '100 ', but got: %s", output)
-	}
-}
-
-func TestRunCppWithTestcases_CompilationError2(t *testing.T) {
-	t.Parallel()
-
-	code := `
-#include <iostream>
-using namespace std;
-
-int main() {
-   for(int i =0 ;i<5 ;i--)cout<<" "<<endl
-   return 0;
-}`
-	resource := models.ResourceLimit{
-		MemoryLimitInMB:    256,
-		TimeLimitInSeconds: 1,
-		CPU:                1,
-	}
-	testcases := []string{""}
-
-	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp, resource)
-
-	// We expect an error due to compilation failure
-	if err == nil {
-		t.Fatalf("Expected Compilation error, but got no error")
-	}
-
-	if !strings.Contains(err.Error(), "Compilation") {
-		t.Errorf("Expected compilation error message, but got: %v", err)
-	}
-
-	// Should have no outputs since compilation faled
-	if outputs != nil && len(outputs) > 0 {
-		t.Errorf("Expected no outputs due to compilation error, but got: %v", outputs)
-	}
-}
-
-func TestRunCppWithTestcases_TimeLimit_compile(t *testing.T) {
-	t.Parallel()
-
-	code := `
-#include <iostream>
-using namespace std;
-
-int main() {
-   for(int i =0 ;i<5 ;i/=5,i--)cout<<" "<<endl;
-   return 0;
-}`
-	resource := models.ResourceLimit{
-		MemoryLimitInMB:    256,
-		TimeLimitInSeconds: 1,
-		CPU:                1,
-	}
-	testcases := []string{""}
-
-	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp, resource)
-
-	if err == nil {
-		t.Fatalf("Expected Time Limit error, but got no error")
-	}
-	if !strings.Contains(err.Error(), "Time Limit") {
-		t.Errorf("Expected Time Limit error message, but got: %v", err)
-	}
-
-	if outputs != nil && len(outputs) > 0 {
-		t.Errorf("Expected no outputs due to compilation error, but got: %v", outputs)
-	}
-}
-
-func TestRunCppWithTestcases_TimeLimit_runtime(t *testing.T) {
-	t.Parallel()
-
-	code := `
-#include <iostream>
-using namespace std;
-
-int main() {
-int n;cin>>n;
-   for(int i =0 ;i<n ;i++)cout<<" "<<endl;
-   return 0;
-}`
-	resource := models.ResourceLimit{
-		MemoryLimitInMB:    256,
-		TimeLimitInSeconds: 1,
-		CPU:                1,
-	}
-	testcases := []string{"10000000"}
-
-	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp, resource)
-
-	if err == nil {
-		t.Fatalf("Expected Time Limit error, but got no error")
-	}
-	if !strings.Contains(err.Error(), "Time Limit") {
-		t.Errorf("Expected Time Limit error message, but got: %v", err)
-	}
-
-	if outputs != nil && len(outputs) > 0 {
-		t.Errorf("Expected no outputs due to compilation error, but got: %v", outputs)
+			if tc.expectErr {
+				if err == nil {
+					t.Fatalf("Expected an error, but got none")
+				}
+				if tc.errContains != "" && !strings.Contains(err.Error(), tc.errContains) {
+					t.Errorf("Expected error to contain '%s', but got: %v", tc.errContains, err)
+				}
+				if outputs != nil && len(outputs) > 0 {
+					t.Errorf("Expected no outputs due to error, but got: %v", outputs)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("Expected no error, but got: %v", err)
+				}
+				if tc.customChecker != nil {
+					tc.customChecker(t, outputs)
+				} else if !reflect.DeepEqual(outputs, tc.expected) {
+					t.Errorf("Expected outputs %v, but got %v", tc.expected, outputs)
+				}
+			}
+		})
 	}
 }

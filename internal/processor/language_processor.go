@@ -22,6 +22,9 @@ func RunCodeWithTestcases(m *containers.ContainersPoolManger, code string, testc
 			outputs = append(outputs, *testOutput)
 		}
 	}
+	if outputs == nil {
+		outputs = []string{}
+	}
 	return outputs, nil
 }
 
