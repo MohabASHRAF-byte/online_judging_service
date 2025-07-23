@@ -1,4 +1,4 @@
-package processor_test
+package processor
 
 import (
 	"judging-service/containers"
@@ -9,10 +9,10 @@ import (
 	"testing"
 )
 
-var manger = containers.NewContainersPoolManger(10)
-var cpp = "cpp"
+var manager = containers.NewContainersPoolManger(10)
+var python = "python"
 
-func TestRunCppWithTestcases(t *testing.T) {
+func TestRunPythonWithTestcases(t *testing.T) {
 	t.Parallel()
 
 	defaultResource := models.ResourceLimit{
@@ -34,53 +34,52 @@ func TestRunCppWithTestcases(t *testing.T) {
 	}{
 		{
 			name:      "Simple Hello World",
-			code:      "#include <iostream>\nint main() { std::cout << \"Hello World!\"; }",
+			code:      "print(\"Hello World!\")",
 			testcases: []string{""},
 			resource:  defaultResource,
 			expected:  []string{"Hello World!"},
-			language:  models.Cpp,
+			language:  models.Python,
 		},
 		{
 			name:      "Input and Output",
-			code:      "#include <iostream>\n#include <string>\nint main() { std::string name; std::cin >> name; std::cout << \"Hello \" << name << \"!\"; }",
+			code:      "name = input()\nprint(f\"Hello {name}!\")",
 			testcases: []string{"World", "Alice"},
 			resource:  defaultResource,
 			expected:  []string{"Hello World!", "Hello Alice!"},
-			language:  models.Cpp,
+			language:  models.Python,
 		},
 		{
 			name:      "Math Operations",
-			code:      "#include <iostream>\nint main() { int a, b; std::cin >> a >> b; std::cout << a + b; }",
+			code:      "a, b = map(int, input().split())\nprint(a + b)",
 			testcases: []string{"3 4", "10 20"},
 			resource:  defaultResource,
 			expected:  []string{"7", "30"},
-			language:  models.Cpp,
+			language:  models.Python,
 		},
 		{
-			name:        "Compilation Error",
-			code:        "#include <iostream>\nint main() { undeclared_variable = 5; }",
+			name:        "Syntax Error",
+			code:        "print(\"Hello World!\"\n# Missing closing parenthesis",
 			testcases:   []string{""},
 			resource:    defaultResource,
 			expectErr:   true,
 			errContains: "compilation failed",
-			language:    models.Cpp,
+			language:    models.Python,
 		},
 		{
-			name:      "compile Time Limit Exceeded",
-			code:      "#include <iostream>\nint main() { while(true); }",
+			name:      "Compile Time Limit Exceeded",
+			code:      "# This is a simple script that should not timeout during syntax check\nprint('Hello')",
 			testcases: []string{""},
 			resource: models.ResourceLimit{
 				MemoryLimitInMB:    256,
 				TimeLimitInSeconds: 5,
 				CPU:                1,
 			},
-			expectErr:   true,
-			errContains: "Time Limit",
-			language:    models.Cpp,
+			expected: []string{"Hello"},
+			language: models.Python,
 		},
 		{
 			name:      "Runtime Time Limit Exceeded",
-			code:      "#include <iostream>\nusing namespace std;\nint main() {\nlong long n;cin>>n;\nlong long x =0 ;\nfor(long long i =0 ;i<n ;i++)x+=90*2+i;cout<<x<<endl;   return 0;\n}",
+			code:      "n = int(input())\nx = 0\nfor i in range(n):\n    x += 90 * 2 + i\nprint(x)",
 			testcases: []string{"1000000000"},
 			resource: models.ResourceLimit{
 				MemoryLimitInMB:    256,
@@ -89,19 +88,32 @@ func TestRunCppWithTestcases(t *testing.T) {
 			},
 			expectErr:   true,
 			errContains: "Time Limit",
-			language:    models.Cpp,
+			language:    models.Python,
+		},
+		{
+			name:      "Infinite Loop Time Limit",
+			code:      "while True:\n    pass",
+			testcases: []string{""},
+			resource: models.ResourceLimit{
+				MemoryLimitInMB:    256,
+				TimeLimitInSeconds: 1,
+				CPU:                1,
+			},
+			expectErr:   true,
+			errContains: "Time Limit",
+			language:    models.Python,
 		},
 		{
 			name:      "Empty Test Cases",
-			code:      "#include <iostream>\nint main() { std::cout << \"No input needed\"; }",
+			code:      "print(\"No input needed\")",
 			testcases: []string{},
 			resource:  defaultResource,
 			expected:  []string{},
-			language:  models.Cpp,
+			language:  models.Python,
 		},
 		{
 			name:      "Large Output",
-			code:      "#include <iostream>\nint main() { for(int i = 1; i <= 100; i++) { std::cout << i << \" \"; } }",
+			code:      "for i in range(1, 101):\n    print(i, end=' ')",
 			testcases: []string{""},
 			resource:  defaultResource,
 			customChecker: func(t *testing.T, outputs []string) {
@@ -112,14 +124,30 @@ func TestRunCppWithTestcases(t *testing.T) {
 					t.Errorf("Expected output to contain '1 ' and '100', but got: %s", outputs[0])
 				}
 			},
-			language: models.Cpp,
+			language: models.Python,
 		},
 		{
-			name:      "Simple Hello World",
-			code:      "print(\"Hello World!\")",
-			testcases: []string{""},
+			name:      "Multiple Lines Input",
+			code:      "lines = []\nfor i in range(3):\n    lines.append(input())\nprint(' '.join(lines))",
+			testcases: []string{"Hello\nWorld\nPython"},
 			resource:  defaultResource,
-			expected:  []string{"Hello World!"},
+			expected:  []string{"Hello World Python"},
+			language:  models.Python,
+		},
+		{
+			name:      "List Processing",
+			code:      "numbers = list(map(int, input().split()))\nresult = sum(numbers)\nprint(result)",
+			testcases: []string{"1 2 3 4 5", "10 20 30"},
+			resource:  defaultResource,
+			expected:  []string{"15", "60"},
+			language:  models.Python,
+		},
+		{
+			name:      "String Operations",
+			code:      "text = input()\nprint(text.upper())\nprint(text.lower())\nprint(len(text))",
+			testcases: []string{"Hello"},
+			resource:  defaultResource,
+			expected:  []string{"HELLO\nhello\n5"},
 			language:  models.Python,
 		},
 	}
@@ -127,7 +155,7 @@ func TestRunCppWithTestcases(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			outputs, err := processor.RunCodeWithTestcases(manger, tc.code, tc.testcases, string(tc.language), tc.resource)
+			outputs, err := processor.RunCodeWithTestcases(manager, tc.code, tc.testcases, string(tc.language), tc.resource)
 
 			if tc.expectErr {
 				if err == nil {

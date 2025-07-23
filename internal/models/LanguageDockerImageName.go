@@ -4,5 +4,5 @@ type LanguageDockerImageName string
 
 const (
 	CppImage    LanguageDockerImageName = "gcc:latest"
-	PythonImage LanguageDockerImageName = "PythonImage"
+	PythonImage LanguageDockerImageName = "python:3.11-alpine"
 )

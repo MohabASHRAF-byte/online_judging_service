@@ -31,7 +31,7 @@ func RunCodeWithTestcases(m *containers.ContainersPoolManger, code string, testc
 func RuntestCase(m *containers.ContainersPoolManger, code string, testcase string, codeLanguage string, resourceLimit models.ResourceLimit) (*string, error) {
 	overallStart := time.Now()
 
-	doc, exec, _, err := m.GetContainer(codeLanguage)
+	doc, exec, _, err := m.GetContainerWithLimits(codeLanguage, resourceLimit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get container: %w", err)
 	}
