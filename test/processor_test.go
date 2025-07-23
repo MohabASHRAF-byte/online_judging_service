@@ -2,6 +2,7 @@ package processor
 
 import (
 	"judging-service/containers"
+	"judging-service/internal/models"
 	"judging-service/internal/processor"
 	"strings"
 	"testing"
@@ -22,8 +23,12 @@ int main() {
 
 	testcases := []string{""}
 	expected := []string{"Hello World!"}
-
-	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp)
+	resource := models.ResourceLimit{
+		MemoryLimitInMB:    256,
+		TimeLimitInSeconds: 1,
+		CPU:                1,
+	}
+	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp, resource)
 
 	if err != nil {
 		t.Fatalf("Expected no error, but got: %v", err)
@@ -52,11 +57,15 @@ int main() {
     cout << "Hello " << name << "!" << endl;
     return 0;
 }`
-
+	resource := models.ResourceLimit{
+		MemoryLimitInMB:    256,
+		TimeLimitInSeconds: 1,
+		CPU:                1,
+	}
 	testcases := []string{"World", "Alice", "Bob"}
 	expected := []string{"Hello World!", "Hello Alice!", "Hello Bob!"}
 
-	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp)
+	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp, resource)
 
 	if err != nil {
 		t.Fatalf("Expected no error, but got: %v", err)
@@ -84,11 +93,15 @@ int main() {
     cout << a + b << endl;
     return 0;
 }`
-
+	resource := models.ResourceLimit{
+		MemoryLimitInMB:    256,
+		TimeLimitInSeconds: 1,
+		CPU:                1,
+	}
 	testcases := []string{"3 4", "10 20", "100 50"}
 	expected := []string{"7", "30", "150"}
 
-	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp)
+	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp, resource)
 
 	if err != nil {
 		t.Fatalf("Expected no error, but got: %v", err)
@@ -117,10 +130,14 @@ int main() {
     cout << "This won't work" << endl;
     return 0;
 }`
-
+	resource := models.ResourceLimit{
+		MemoryLimitInMB:    256,
+		TimeLimitInSeconds: 1,
+		CPU:                1,
+	}
 	testcases := []string{""}
 
-	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp)
+	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp, resource)
 
 	// We expect an error due to compilation failure
 	if err == nil {
@@ -139,7 +156,11 @@ int main() {
 
 func TestRunCppWithTestcases_MultipleInputsPerCase(t *testing.T) {
 	t.Parallel()
-
+	resource := models.ResourceLimit{
+		MemoryLimitInMB:    256,
+		TimeLimitInSeconds: 1,
+		CPU:                1,
+	}
 	code := `#include <iostream>
 using namespace std;
 
@@ -156,7 +177,7 @@ int main() {
 	testcases := []string{"3", "5", "1"}
 	expected := []string{"1 2 3", "1 2 3 4 5", "1"}
 
-	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp)
+	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp, resource)
 
 	if err != nil {
 		t.Fatalf("Expected no error, but got: %v", err)
@@ -183,10 +204,14 @@ int main() {
     cout << "No input needed" << endl;
     return 0;
 }`
-
+	resource := models.ResourceLimit{
+		MemoryLimitInMB:    256,
+		TimeLimitInSeconds: 1,
+		CPU:                1,
+	}
 	testcases := []string{} // Empty test cases
 
-	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp)
+	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp, resource)
 
 	if err != nil {
 		t.Fatalf("Expected no error, but got: %v", err)
@@ -210,10 +235,14 @@ int main() {
     cout << endl;
     return 0;
 }`
-
+	resource := models.ResourceLimit{
+		MemoryLimitInMB:    256,
+		TimeLimitInSeconds: 1,
+		CPU:                1,
+	}
 	testcases := []string{""}
 
-	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp)
+	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp, resource)
 
 	if err != nil {
 		t.Fatalf("Expected no error, but got: %v", err)
@@ -241,10 +270,14 @@ int main() {
    for(int i =0 ;i<5 ;i--)cout<<" "<<endl
    return 0;
 }`
-
+	resource := models.ResourceLimit{
+		MemoryLimitInMB:    256,
+		TimeLimitInSeconds: 1,
+		CPU:                1,
+	}
 	testcases := []string{""}
 
-	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp)
+	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp, resource)
 
 	// We expect an error due to compilation failure
 	if err == nil {
@@ -272,10 +305,14 @@ int main() {
    for(int i =0 ;i<5 ;i/=5,i--)cout<<" "<<endl;
    return 0;
 }`
-
+	resource := models.ResourceLimit{
+		MemoryLimitInMB:    256,
+		TimeLimitInSeconds: 1,
+		CPU:                1,
+	}
 	testcases := []string{""}
 
-	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp)
+	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp, resource)
 
 	if err == nil {
 		t.Fatalf("Expected Time Limit error, but got no error")
@@ -301,10 +338,14 @@ int n;cin>>n;
    for(int i =0 ;i<n ;i++)cout<<" "<<endl;
    return 0;
 }`
-
+	resource := models.ResourceLimit{
+		MemoryLimitInMB:    256,
+		TimeLimitInSeconds: 1,
+		CPU:                1,
+	}
 	testcases := []string{"10000000"}
 
-	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp)
+	outputs, err := processor.RunCodeWithTestcases(manger, code, testcases, cpp, resource)
 
 	if err == nil {
 		t.Fatalf("Expected Time Limit error, but got no error")

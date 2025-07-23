@@ -3,6 +3,7 @@ package containers
 import (
 	"context"
 	"fmt"
+	"judging-service/internal/service"
 	"sort"
 	"sync"
 	"time"
@@ -11,12 +12,6 @@ import (
 	"github.com/docker/docker/client"
 	"judging-service/internal/models"
 )
-
-//type ResourceLimit struct {
-//	MemoryMB int
-//	Timeout  time.Duration
-//	CPU      int // (Optional) CPU cores/quotas
-//}
 
 type ContainersPoolManger struct {
 	Limit          int
@@ -74,20 +69,30 @@ func (manger *ContainersPoolManger) getContainer(language models.Language) (*mod
 	return nil, fmt.Errorf("all containers are busy and pool is full")
 }
 
-func (m *ContainersPoolManger) GetContainer(language models.Language) (*models.Container, error) {
+func (m *ContainersPoolManger) GetContainer(language string) (*models.Container, models.LangContainer, models.Language, error) {
 	maxAttempts := 50
 	sleepDuration := 1000 * time.Millisecond
+	var exec models.LangContainer
+	var lang models.Language
+	switch language {
+	case string(models.Cpp):
+		lang = models.Cpp
+		exec = service.CppRunLangInterFace{}
+	default:
+		return nil, nil, models.Cpp, fmt.Errorf("invalid language: %q", language)
+	}
+
 	var lastErr error
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
-		doc, err := m.getContainer(language)
+		doc, err := m.getContainer(lang)
 		if err == nil {
-			return doc, nil
+			return doc, exec, lang, nil
 		}
 		lastErr = err
 		time.Sleep(sleepDuration)
 	}
-	return nil, fmt.Errorf("after %d attempts, last error: %w", maxAttempts, lastErr)
+	return nil, nil, models.Cpp, fmt.Errorf("after %d attempts, last error: %w", maxAttempts, lastErr)
 }
 
 func (manger *ContainersPoolManger) FreeContainer(container *models.Container) {
