@@ -4,7 +4,7 @@
 
 Online judge system engineered for secure, scalable code evaluation in educational and competitive programming environments. Built on modern microservices principles with containerization and resource management capabilities.
 
-## 🏛️ System Architecture
+##System Architecture
 
 ### **Architectural Overview**
 

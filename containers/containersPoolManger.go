@@ -30,17 +30,17 @@ func NewContainersPoolManger(limit int) *ContainersPoolManger {
 
 // GetContainerWithLimits is the new primary method for acquiring a container.
 // It handles language selection and retries, calling the internal get-or-create logic.
-func (m *ContainersPoolManger) GetContainerWithLimits(language string, limit models.ResourceLimit) (*models.Container, models.LangContainer, models.Language, error) {
+func (m *ContainersPoolManger) GetContainerWithLimits(language int, limit models.ResourceLimit) (*models.Container, models.LangContainer, models.Language, error) {
 	maxAttempts := 50
 	sleepDuration := 1000 * time.Millisecond
 
 	var exec models.LangContainer
 	var lang models.Language
 	switch language {
-	case string(models.Cpp):
+	case 1:
 		lang = models.Cpp
 		exec = service.CppRunLangInterFace{}
-	case string(models.Python):
+	case 0:
 		lang = models.Python
 		exec = service.PythonRunLangInterface{}
 

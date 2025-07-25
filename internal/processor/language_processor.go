@@ -4,31 +4,58 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"judging-service/api/Dtos"
 	"judging-service/containers"
-	"judging-service/internal/customErrors"
+	customErrors "judging-service/internal/customErrors"
 	"judging-service/internal/models"
 	"log"
+	"strings"
 	"time"
 )
 
-func RunCodeWithTestcases(m *containers.ContainersPoolManger, code string, testcases []string, codeLanguage string, resourceLimit models.ResourceLimit) ([]string, error) {
-	var outputs []string
-	for i, testCase := range testcases {
-		testOutput, err := RuntestCase(m, code, testCase, codeLanguage, resourceLimit)
-		if err != nil {
-			return nil, fmt.Errorf("testcase #%d failed: %w", i+1, err)
-		}
-		if testOutput != nil {
-			outputs = append(outputs, *testOutput)
-		}
-	}
-	if outputs == nil {
-		outputs = []string{}
-	}
-	return outputs, nil
-}
+func RunCodeWithTestcases(
+	m *containers.ContainersPoolManger,
+	submission Dtos.SubmissionQueueDto,
+) (models.JudgingResult, error) {
 
-func RuntestCase(m *containers.ContainersPoolManger, code string, testcase string, codeLanguage string, resourceLimit models.ResourceLimit) (*string, error) {
+	outputs := make([]models.TestCaseOutput, 0, len(submission.InputTests))
+	for i, testCase := range submission.InputTests {
+		testOutput, err := RuntestCase(m, submission.Code, testCase.Input, submission.Language, models.ResourceLimit{
+			MemoryLimitInMB:    submission.MemoryLimit,
+			TimeLimitInSeconds: submission.TimeLimit,
+			CPU:                1,
+		})
+		if err != nil {
+			var verdict int = 3
+
+			if strings.Contains(err.Error(), "Time Limit Exceeded") {
+				verdict = 2
+			}
+			return models.JudgingResult{
+				SubmissionId: submission.SubmissionId,
+				Verdict:      verdict,
+				Outputs:      nil,
+				IsErrorExist: true,
+				FallingTest:  i + 1,
+			}, fmt.Errorf("testcase #%d failed: %w", i+1, err)
+		}
+
+		if testOutput != nil {
+			outputs = append(outputs, models.TestCaseOutput{
+				Output:     *testOutput,
+				TestCaseId: testCase.TestCaseId,
+			})
+		}
+	}
+	return models.JudgingResult{
+		SubmissionId: submission.SubmissionId,
+		Verdict:      0,
+		IsErrorExist: false,
+		Outputs:      outputs,
+		FallingTest:  0,
+	}, nil
+}
+func RuntestCase(m *containers.ContainersPoolManger, code string, testcase string, codeLanguage int, resourceLimit models.ResourceLimit) (*string, error) {
 	overallStart := time.Now()
 
 	doc, exec, _, err := m.GetContainerWithLimits(codeLanguage, resourceLimit)
